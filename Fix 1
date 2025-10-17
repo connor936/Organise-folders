@@ -1,0 +1,20 @@
+def cleanup_existing_items():
+    """Organize only loose items, not dated folders or system folders."""
+    for item in DOWNLOADS_FOLDER.iterdir():
+        # Skip known folders and the log file
+        if item.name in {"Archive", LOG_FILE.name}:
+            continue
+
+        # Skip folders that already look like date folders
+        try:
+            datetime.strptime(item.name.strip(), "%Y-%m-%d")
+            continue
+        except ValueError:
+            pass
+
+        # Skip hidden/system files
+        if item.name.startswith(".") or item.name.lower() == "desktop.ini":
+            continue
+
+        # Everything else = unorganized item → move it
+        organize_item(item)
