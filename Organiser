@@ -1,0 +1,200 @@
+Excellent — that’s the perfect finishing touch 👏
+
+This version keeps your single downloads_log.xlsx file but automatically:
+	•	creates a new sheet for each month (e.g. 2025-10, 2025-11, etc.),
+	•	writes new entries to the current month’s sheet,
+	•	and preserves all previous months in the same workbook.
+
+You’ll have a clean, auditable log you can sort or filter in Excel easily.
+
+⸻
+
+🧩 Final Script — Smart Downloads Organizer (Monthly Log Sheets)
+
+import os
+import time
+import shutil
+from datetime import datetime, timedelta
+from pathlib import Path
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+from openpyxl import Workbook, load_workbook
+
+# === CONFIGURATION ===
+DOWNLOADS_FOLDER = Path.home() / "Downloads"
+ARCHIVE_FOLDER = DOWNLOADS_FOLDER / "Archive"
+LOG_FILE = DOWNLOADS_FOLDER / "downloads_log.xlsx"
+RETENTION_DAYS = 30  # Move folders older than this into Archive
+
+# === HELPER FUNCTIONS ===
+
+def ensure_excel_log():
+    """Create the Excel log file if it doesn't exist."""
+    if not LOG_FILE.exists():
+        wb = Workbook()
+        ws = wb.active
+        ws.title = datetime.now().strftime("%Y-%m")
+        ws.append(["Date", "Time", "Item Name", "Item Type", "Destination"])
+        wb.save(LOG_FILE)
+
+
+def get_month_sheet(wb):
+    """Return the active sheet for the current month, create it if missing."""
+    current_month = datetime.now().strftime("%Y-%m")
+    if current_month in wb.sheetnames:
+        return wb[current_month]
+    ws = wb.create_sheet(title=current_month)
+    ws.append(["Date", "Time", "Item Name", "Item Type", "Destination"])
+    return ws
+
+
+def log_to_excel(item_name, item_type, dest_path):
+    """Append a row to the Excel log file, creating a sheet for the month if needed."""
+    ensure_excel_log()
+    wb = load_workbook(LOG_FILE)
+    ws = get_month_sheet(wb)
+
+    now = datetime.now()
+    ws.append([
+        now.strftime("%Y-%m-%d"),
+        now.strftime("%H:%M:%S"),
+        item_name,
+        item_type,
+        str(dest_path)
+    ])
+    wb.save(LOG_FILE)
+
+
+def archive_old_folders():
+    """Move folders older than RETENTION_DAYS into the Archive folder."""
+    ARCHIVE_FOLDER.mkdir(exist_ok=True)
+    cutoff_date = datetime.now() - timedelta(days=RETENTION_DAYS)
+
+    for item in DOWNLOADS_FOLDER.iterdir():
+        if item.is_dir() and item.name.startswith("20"):  # date folder like 2025-10-17
+            try:
+                folder_date = datetime.strptime(item.name, "%Y-%m-%d")
+                if folder_date < cutoff_date:
+                    dest = ARCHIVE_FOLDER / item.name
+                    if dest.exists():
+                        shutil.rmtree(dest)
+                    shutil.move(str(item), dest)
+                    print(f"📦 Archived: {item.name}")
+            except ValueError:
+                continue  # Skip non-date folders
+
+
+def cleanup_existing_items():
+    """Organize any loose files/folders already in Downloads."""
+    for item in DOWNLOADS_FOLDER.iterdir():
+        if item.name in {"Archive", LOG_FILE.name}:
+            continue
+        if item.is_dir() and item.name.startswith("20"):
+            continue  # Skip already organized date folders
+        organize_item(item)
+
+
+def organize_item(src_path):
+    """Move a file or folder into today's date folder and log it."""
+    name = src_path.name
+    today = datetime.now().strftime("%Y-%m-%d")
+    date_folder = DOWNLOADS_FOLDER / today
+    date_folder.mkdir(exist_ok=True)
+
+    dest_path = date_folder / name
+
+    # Handle duplicates safely
+    if dest_path.exists():
+        base, ext = os.path.splitext(name)
+        counter = 1
+        while True:
+            new_name = f"{base}({counter}){ext}"
+            new_dest = date_folder / new_name
+            if not new_dest.exists():
+                dest_path = new_dest
+                break
+            counter += 1
+
+    try:
+        shutil.move(str(src_path), str(dest_path))
+        item_type = "Folder" if dest_path.is_dir() else dest_path.suffix.lstrip(".").upper() or "File"
+        print(f"✅ Moved: {name} → {dest_path}")
+        log_to_excel(name, item_type, dest_path)
+    except Exception as e:
+        print(f"❌ Error moving {name}: {e}")
+
+
+# === FILE WATCHER ===
+
+class DownloadWatcher(FileSystemEventHandler):
+    def on_created(self, event):
+        """Triggered when a new file or folder appears."""
+        time.sleep(1)
+        src = Path(event.src_path)
+        if src.exists():
+            organize_item(src)
+
+
+# === MAIN ===
+
+if __name__ == "__main__":
+    print(f"👀 Watching folder: {DOWNLOADS_FOLDER}")
+    print(f"📊 Logging to Excel file: {LOG_FILE}")
+    print(f"📦 Old folders archived after {RETENTION_DAYS} days")
+
+    ensure_excel_log()
+    archive_old_folders()
+    cleanup_existing_items()
+
+    event_handler = DownloadWatcher()
+    observer = Observer()
+    observer.schedule(event_handler, str(DOWNLOADS_FOLDER), recursive=False)
+    observer.start()
+
+    try:
+        while True:
+            archive_old_folders()  # Check periodically
+            time.sleep(60)
+    except KeyboardInterrupt:
+        observer.stop()
+    observer.join()
+
+
+⸻
+
+🧾 Example Excel Structure
+
+downloads_log.xlsx
+
+Sheets:
+
+2025-10
+2025-11
+2025-12
+
+Each sheet logs entries for that month:
+
+Date	Time	Item Name	Item Type	Destination Path
+2025-10-17	09:12:30	patch.zip	ZIP	C:\Users\Connor\Downloads\2025-10-17\patch.zip
+2025-10-17	09:13:12	Screenshot.png	PNG	C:\Users\Connor\Downloads\2025-10-17\Screenshot.png
+2025-10-18	08:47:51	ExtractedFolder	Folder	C:\Users\Connor\Downloads\2025-10-18\ExtractedFolder
+
+
+⸻
+
+🔧 Summary of Improvements
+
+Feature	Description
+🗓️ Date-only structure	Keeps all downloads from each day together.
+🧾 Central Excel log	All history stored in one workbook.
+📅 Monthly sheets	Automatically rotates log sheets by month.
+🧹 Startup cleanup	Organizes any loose files on startup.
+📦 Auto-archive	Moves date folders older than 30 days to Archive/.
+🔁 Duplicate handling	Prevents overwriting by renaming automatically.
+⚙️ Minimal dependencies	watchdog and openpyxl only.
+
+
+⸻
+
+Would you like me to make it append system info (like hostname and username) into the Excel log as extra columns?
+It’s a small tweak but makes the log very useful if you ever run this across multiple machines or user accounts.
