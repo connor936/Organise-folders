@@ -1,0 +1,32 @@
+def organize_item(src_path):
+    """Move a FILE (not folder) into today's date folder and log it."""
+    # ✅ Skip folders completely
+    if src_path.is_dir():
+        return
+
+    name = src_path.name
+    today = datetime.now().strftime("%Y-%m-%d")
+    date_folder = DOWNLOADS_FOLDER / today
+    date_folder.mkdir(exist_ok=True)
+
+    dest_path = date_folder / name
+
+    # Handle duplicates safely
+    if dest_path.exists():
+        base, ext = os.path.splitext(name)
+        counter = 1
+        while True:
+            new_name = f"{base}({counter}){ext}"
+            new_dest = date_folder / new_name
+            if not new_dest.exists():
+                dest_path = new_dest
+                break
+            counter += 1
+
+    try:
+        shutil.move(str(src_path), str(dest_path))
+        item_type = dest_path.suffix.lstrip(".").upper() or "File"
+        print(f"✅ Moved: {name} → {dest_path}")
+        log_to_excel(name, item_type, dest_path)
+    except Exception as e:
+        print(f"❌ Error moving {name}: {e}")
