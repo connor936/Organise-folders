@@ -1,0 +1,42 @@
+def cleanup_existing_items():
+    """Organize files/folders based on their last modified date."""
+    for item in DOWNLOADS_FOLDER.iterdir():
+        # Skip special items
+        if item.name in {"Archive", LOG_FILE.name}:
+            continue
+        if item.name.startswith("."):
+            continue
+        if item.is_dir() and item.name.startswith("20"):
+            # Skip already dated folders
+            try:
+                datetime.strptime(item.name.strip(), "%Y-%m-%d")
+                continue
+            except ValueError:
+                pass
+
+        # Get modified date
+        mtime = datetime.fromtimestamp(item.stat().st_mtime)
+        date_folder = DOWNLOADS_FOLDER / mtime.strftime("%Y-%m-%d")
+        date_folder.mkdir(exist_ok=True)
+
+        dest_path = date_folder / item.name
+
+        # Handle duplicates safely
+        if dest_path.exists():
+            base, ext = os.path.splitext(item.name)
+            counter = 1
+            while True:
+                new_name = f"{base}({counter}){ext}"
+                new_dest = date_folder / new_name
+                if not new_dest.exists():
+                    dest_path = new_dest
+                    break
+                counter += 1
+
+        try:
+            shutil.move(str(item), str(dest_path))
+            item_type = "Folder" if dest_path.is_dir() else dest_path.suffix.lstrip(".").upper() or "File"
+            print(f"📅 Moved (based on modified date): {item.name} → {dest_path}")
+            log_to_excel(item.name, item_type, dest_path)
+        except Exception as e:
+            print(f"❌ Error moving {item.name}: {e}")
